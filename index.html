@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Microalgae Carbon Capture Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..900,0..100&family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:           #f4f1ea;
+    --bg-soft:      #ebe6da;
+    --paper:        #fbf9f4;
+    --ink:          #0d1f17;
+    --ink-soft:     #2a3d31;
+    --ink-mute:     #6a7c70;
+    --algae:        #0d3a26;
+    --algae-deep:   #061c12;
+    --algae-mid:    #1b6244;
+    --lime:         #c7f24c;
+    --lime-soft:    #e6f9a3;
+    --amber:        #d97a2c;
+    --rule:         #c9c2b1;
+    --rule-soft:    #ddd6c4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-weight: 400;
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* subtle organic noise on the page */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    opacity: .35;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    z-index: 0;
+  }
+
+  .page {
+    position: relative; z-index: 1;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 36px 40px 80px;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--rule);
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .brand-mark {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, var(--lime), var(--algae-mid) 45%, var(--algae-deep) 100%);
+    box-shadow: inset 0 0 12px rgba(0,0,0,.4), 0 2px 8px rgba(13,58,38,.2);
+    position: relative;
+  }
+  .brand-mark::after {
+    content: '';
+    position: absolute; inset: 6px;
+    border-radius: 50%;
+    border: 1px dashed rgba(255,255,255,.35);
+  }
+
+  .brand-text { line-height: 1.1; }
+  .brand-name {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 22px;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    letter-spacing: -0.01em;
+    color: var(--algae-deep);
+  }
+  .brand-name em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--algae-mid);
+  }
+  .brand-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 4px;
+  }
+
+  .topbar-meta {
+    display: flex;
+    gap: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .topbar-meta span strong {
+    display: block;
+    color: var(--algae-deep);
+    font-weight: 700;
+    margin-top: 2px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    padding: 56px 0 40px;
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 60px;
+    align-items: end;
+  }
+
+  .hero h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 300;
+    font-variation-settings: 'opsz' 144, 'SOFT' 0;
+    font-size: clamp(40px, 5.8vw, 76px);
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+    color: var(--algae-deep);
+  }
+  .hero h1 em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--algae-mid);
+    font-variation-settings: 'opsz' 144, 'SOFT' 80;
+  }
+  .hero .lede {
+    font-size: 14px;
+    color: var(--ink-soft);
+    max-width: 36ch;
+    margin-top: 22px;
+    line-height: 1.55;
+  }
+
+  .hero-readout {
+    background: var(--algae-deep);
+    color: var(--bg);
+    padding: 24px 26px;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-readout::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--lime), transparent);
+  }
+  .readout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--lime-soft);
+    opacity: 0.7;
+  }
+  .readout-value {
+    font-family: 'Fraunces', serif;
+    font-weight: 300;
+    font-variation-settings: 'opsz' 144;
+    font-size: clamp(56px, 7vw, 86px);
+    line-height: 1;
+    margin: 8px 0 2px;
+    color: var(--lime);
+    letter-spacing: -0.04em;
+  }
+  .readout-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bg-soft);
+    opacity: 0.8;
+  }
+  .readout-eq {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px dashed rgba(231,249,163,.25);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--lime-soft);
+    opacity: 0.85;
+    line-height: 1.6;
+  }
+
+  /* ---------- Section header ---------- */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin: 44px 0 22px;
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--algae-mid);
+    letter-spacing: 0.1em;
+  }
+  .section-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: 'opsz' 72;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--algae-deep);
+  }
+  .section-rule {
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  /* ---------- Workbench (inputs + outputs) ---------- */
+  .workbench {
+    display: grid;
+    grid-template-columns: 1fr 1.35fr;
+    gap: 28px;
+  }
+
+  /* Inputs panel */
+  .inputs-panel {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 28px 26px;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 22px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .panel-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--algae-mid);
+    background: var(--lime-soft);
+    padding: 4px 8px;
+    border-radius: 2px;
+  }
+  .panel-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 16px;
+    color: var(--algae-deep);
+  }
+
+  .field { margin-bottom: 22px; }
+  .field:last-child { margin-bottom: 0; }
+
+  .field-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .field-label .name {
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+  .field-label .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--algae-deep);
+    font-weight: 500;
+  }
+  .field-help {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 6px;
+  }
+
+  /* Slider styling */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--rule);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    background: var(--algae);
+    border: 2px solid var(--lime);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: var(--algae);
+    border: 2px solid var(--lime);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  /* Scenario buttons */
+  .scenario-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .scenario-btn {
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 10px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+  .scenario-btn .sb-name {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+  .scenario-btn .sb-val {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+  }
+  .scenario-btn:hover {
+    border-color: var(--algae-mid);
+    background: var(--bg-soft);
+  }
+  .scenario-btn.active {
+    background: var(--algae-deep);
+    border-color: var(--algae-deep);
+  }
+  .scenario-btn.active .sb-name { color: var(--lime); }
+  .scenario-btn.active .sb-val { color: var(--lime-soft); }
+
+  /* Validation message */
+  .validation {
+    margin-top: 16px;
+    padding: 10px 12px;
+    background: rgba(217, 122, 44, 0.08);
+    border-left: 2px solid var(--amber);
+    font-size: 11.5px;
+    color: var(--amber);
+    display: none;
+  }
+  .validation.show { display: block; }
+
+  /* Output cards */
+  .outputs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-content: start;
+  }
+  .out-card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+  }
+  .out-card.featured {
+    grid-column: span 2;
+    background: linear-gradient(135deg, var(--paper) 0%, var(--bg-soft) 100%);
+    border-color: var(--algae-mid);
+  }
+  .out-card .ind {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--lime);
+    box-shadow: 0 0 8px var(--lime);
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+  .out-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .out-value {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: 'opsz' 72;
+    font-size: 32px;
+    line-height: 1;
+    color: var(--algae-deep);
+    margin: 10px 0 4px;
+    letter-spacing: -0.02em;
+  }
+  .out-card.featured .out-value {
+    font-size: 44px;
+  }
+  .out-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--ink-mute);
+  }
+  .out-equiv {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--rule-soft);
+    font-size: 11px;
+    color: var(--ink-soft);
+    line-height: 1.45;
+  }
+
+  /* ---------- Charts ---------- */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .chart-card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 24px 24px 18px;
+  }
+  .chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .chart-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 15px;
+    color: var(--algae-deep);
+  }
+  .chart-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .chart-wrap {
+    position: relative;
+    height: 240px;
+  }
+
+  /* ---------- Summary ---------- */
+  .summary {
+    background: var(--algae-deep);
+    color: var(--bg);
+    padding: 32px 36px;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .summary::before {
+    content: '';
+    position: absolute; top: 0; left: 0; bottom: 0;
+    width: 3px;
+    background: var(--lime);
+  }
+  .summary-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--lime);
+    margin-bottom: 12px;
+  }
+  .summary-text {
+    font-family: 'Fraunces', serif;
+    font-weight: 300;
+    font-variation-settings: 'opsz' 72;
+    font-size: 22px;
+    line-height: 1.4;
+    color: var(--bg);
+    letter-spacing: -0.005em;
+  }
+  .summary-text strong {
+    font-weight: 500;
+    color: var(--lime);
+    font-style: italic;
+  }
+
+  /* ---------- Assumptions ---------- */
+  .assumptions {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 28px 32px;
+  }
+  .assumptions-eq {
+    background: var(--bg-soft);
+    padding: 16px 20px;
+    border-radius: 3px;
+    margin-bottom: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--algae-deep);
+    text-align: center;
+    line-height: 1.6;
+  }
+  .assumptions h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--algae-deep);
+    margin-bottom: 10px;
+    margin-top: 18px;
+  }
+  .assumptions h3:first-of-type { margin-top: 0; }
+  .assumptions ul {
+    list-style: none;
+    padding: 0;
+  }
+  .assumptions li {
+    padding: 7px 0 7px 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    position: relative;
+    border-bottom: 1px dotted var(--rule-soft);
+  }
+  .assumptions li:last-child { border-bottom: none; }
+  .assumptions li::before {
+    content: '·';
+    position: absolute;
+    left: 4px;
+    color: var(--algae-mid);
+    font-weight: 700;
+  }
+  .assumptions li code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--algae-deep);
+    background: var(--bg-soft);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+  .assumptions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+
+  /* ---------- Footer ---------- */
+  .footer {
+    margin-top: 50px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 920px) {
+    .page { padding: 24px 20px 60px; }
+    .hero { grid-template-columns: 1fr; gap: 32px; }
+    .workbench { grid-template-columns: 1fr; }
+    .charts-grid { grid-template-columns: 1fr; }
+    .assumptions-grid { grid-template-columns: 1fr; }
+    .topbar-meta { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============================ TOP BAR ============================ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <div class="brand-name">Microalgae <em>Carbon Capture</em></div>
+        <div class="brand-sub">Flat-Panel PBR · Sequestration Estimator</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <span>Version<strong>v1.0</strong></span>
+      <span>Engine<strong>Live</strong></span>
+      <span>Model<strong>OD·V·F·η</strong></span>
+    </div>
+  </header>
+
+  <!-- ============================ HERO ============================ -->
+  <section class="hero">
+    <div>
+      <h1>How much <em>CO₂</em> can your<br/>photobioreactor <em>capture?</em></h1>
+      <p class="lede">An engineering-grade estimator for flat-panel microalgae photobioreactors. Adjust optical density, working volume, and operating parameters to project annual carbon sequestration — backed by empirical capture factors and stoichiometric biomass conversion.</p>
+    </div>
+    <div class="hero-readout">
+      <div class="readout-label">Yearly CO₂ Sequestration</div>
+      <div class="readout-value" id="heroTons">0.71</div>
+      <div class="readout-unit">tonnes CO₂ / year</div>
+      <div class="readout-eq">
+        Y = OD × V × F × η<br/>
+        <span id="heroEq">3.0 × 1,000 L × 0.25 × 0.95</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ WORKBENCH ============================ -->
+  <div class="section-head">
+    <span class="section-num">01 ▸</span>
+    <h2 class="section-title">Operating parameters & live readouts</h2>
+    <div class="section-rule"></div>
+  </div>
+
+  <section class="workbench">
+
+    <!-- INPUTS -->
+    <div class="inputs-panel">
+      <div class="panel-header">
+        <span class="panel-tag">Inputs</span>
+        <span class="panel-title">Cultivation conditions</span>
+      </div>
+
+      <!-- OD -->
+      <div class="field">
+        <div class="field-label">
+          <span class="name">Optical Density (OD<sub>680</sub>)</span>
+          <span class="value"><span id="odVal">3.0</span></span>
+        </div>
+        <input type="range" id="od" min="0.1" max="10" step="0.1" value="3.0">
+        <div class="field-help">Range 0.1 – 10 · measured at 680 nm</div>
+      </div>
+
+      <!-- Volume -->
+      <div class="field">
+        <div class="field-label">
+          <span class="name">PBR Working Volume</span>
+          <span class="value"><span id="volVal">1,000</span> L</span>
+        </div>
+        <input type="range" id="vol" min="10" max="100000" step="10" value="1000">
+        <div class="field-help">Range 10 L – 100,000 L (log-scaled below)</div>
+      </div>
+
+      <!-- Operating Days -->
+      <div class="field">
+        <div class="field-label">
+          <span class="name">Operating Days / Year</span>
+          <span class="value"><span id="daysVal">330</span> d</span>
+        </div>
+        <input type="range" id="days" min="1" max="365" step="1" value="330">
+        <div class="field-help">Default 330 ≈ 90% uptime</div>
+      </div>
+
+      <!-- Efficiency -->
+      <div class="field">
+        <div class="field-label">
+          <span class="name">Efficiency Factor</span>
+          <span class="value"><span id="effVal">95</span>%</span>
+        </div>
+        <input type="range" id="eff" min="0" max="100" step="1" value="95">
+        <div class="field-help">Accounts for downtime, losses, respiration</div>
+      </div>
+
+      <!-- Scenario -->
+      <div class="field">
+        <div class="field-label">
+          <span class="name">Capture Factor Scenario</span>
+          <span class="value" id="factorDisplay">0.250 kg / OD·L·yr</span>
+        </div>
+        <div class="scenario-group">
+          <button class="scenario-btn" data-scenario="conservative" data-factor="0.18">
+            <span class="sb-name">Conservative</span>
+            <span class="sb-val">0.18</span>
+          </button>
+          <button class="scenario-btn active" data-scenario="standard" data-factor="0.25">
+            <span class="sb-name">Standard</span>
+            <span class="sb-val">0.25</span>
+          </button>
+          <button class="scenario-btn" data-scenario="optimized" data-factor="0.30">
+            <span class="sb-name">Optimized</span>
+            <span class="sb-val">0.30</span>
+          </button>
+        </div>
+        <div class="field-help" id="scenarioDesc">Typical industrial flat-panel PBR with CO₂ sparging</div>
+      </div>
+
+      <div class="validation" id="validation"></div>
+    </div>
+
+    <!-- OUTPUTS -->
+    <div class="outputs-grid">
+
+      <div class="out-card featured">
+        <span class="ind"></span>
+        <div class="out-label">Annual CO₂ Capture</div>
+        <div class="out-value"><span id="yearKg">712.5</span></div>
+        <div class="out-unit">kg / year</div>
+        <div class="out-equiv" id="yearEquiv">≈ equivalent to the emissions of one passenger car driving 4,300 km</div>
+      </div>
+
+      <div class="out-card">
+        <span class="ind"></span>
+        <div class="out-label">Monthly Capture</div>
+        <div class="out-value"><span id="monthKg">59.4</span></div>
+        <div class="out-unit">kg / month</div>
+      </div>
+
+      <div class="out-card">
+        <span class="ind"></span>
+        <div class="out-label">Daily Capture</div>
+        <div class="out-value"><span id="dayKg">2.16</span></div>
+        <div class="out-unit">kg / operating day</div>
+      </div>
+
+      <div class="out-card">
+        <span class="ind"></span>
+        <div class="out-label">Daily Biomass Yield</div>
+        <div class="out-value"><span id="biomass">1.18</span></div>
+        <div class="out-unit">kg dry / day</div>
+      </div>
+
+      <div class="out-card">
+        <span class="ind"></span>
+        <div class="out-label">Effective Factor (after η)</div>
+        <div class="out-value"><span id="effFactor">0.238</span></div>
+        <div class="out-unit">kg CO₂ / OD·L·yr</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================ CHARTS ============================ -->
+  <div class="section-head">
+    <span class="section-num">02 ▸</span>
+    <h2 class="section-title">Sensitivity analysis</h2>
+    <div class="section-rule"></div>
+  </div>
+
+  <section class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-head">
+        <div class="chart-title">OD vs Annual CO₂ Capture</div>
+        <div class="chart-meta">Volume & Days constant</div>
+      </div>
+      <div class="chart-wrap"><canvas id="odChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-head">
+        <div class="chart-title">Volume vs Annual CO₂ Capture</div>
+        <div class="chart-meta">OD & Days constant · log scale</div>
+      </div>
+      <div class="chart-wrap"><canvas id="volChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ============================ SUMMARY ============================ -->
+  <div class="section-head">
+    <span class="section-num">03 ▸</span>
+    <h2 class="section-title">Executive summary</h2>
+    <div class="section-rule"></div>
+  </div>
+
+  <section class="summary">
+    <div class="summary-label">Auto-generated · Updates with inputs</div>
+    <div class="summary-text" id="summaryText">
+      Under the <strong>Standard</strong> operating scenario at OD <strong>3.00</strong>, a <strong>1,000 L</strong> flat-panel photobioreactor running <strong>330 days/year</strong> at <strong>95%</strong> efficiency is projected to sequester approximately <strong>0.71 tonnes</strong> of CO₂ annually, yielding around <strong>1.18 kg</strong> of dry algal biomass per day.
+    </div>
+  </section>
+
+  <!-- ============================ ASSUMPTIONS ============================ -->
+  <div class="section-head">
+    <span class="section-num">04 ▸</span>
+    <h2 class="section-title">Methodology & assumptions</h2>
+    <div class="section-rule"></div>
+  </div>
+
+  <section class="assumptions">
+    <div class="assumptions-eq">
+      Y<sub>CO₂</sub>&nbsp;(kg/yr) &nbsp;≈&nbsp; OD&nbsp;×&nbsp;V&nbsp;(L)&nbsp;×&nbsp;F&nbsp;(kg/OD·L·yr)&nbsp;×&nbsp;η
+    </div>
+
+    <div class="assumptions-grid">
+      <div>
+        <h3>Capture-factor scenarios</h3>
+        <ul>
+          <li><code>0.18</code> · Conservative — low light, suboptimal mixing, lower-productivity strains.</li>
+          <li><code>0.25</code> · Standard — typical industrial flat-panel PBR with CO₂ sparging.</li>
+          <li><code>0.30</code> · Optimized — high PAR, 5–10% CO₂ enrichment, tuned strain, automated pH.</li>
+        </ul>
+
+        <h3>Stoichiometry</h3>
+        <ul>
+          <li>CO₂-to-biomass ratio = <code>1.83 kg CO₂ / kg dry biomass</code></li>
+          <li>Based on average algal composition C₁.₀H₁.₈O₀.₅N₀.₂</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3>Operating envelope</h3>
+        <ul>
+          <li>OD measured at 680 nm — linear correlation across OD 0.1 – 10.</li>
+          <li>PAR delivery ≥ 200 µmol photons m⁻² s⁻¹ averaged over photoperiod.</li>
+          <li>Flat-panel geometry assumed (±10–20% deviation for tubular / raceway).</li>
+          <li>Efficiency factor covers downtime, harvest loss, evaporation, respiration.</li>
+        </ul>
+
+        <h3>References</h3>
+        <ul>
+          <li>Chisti Y. (2007). Biodiesel from microalgae. <em>Biotechnol. Adv.</em> 25(3), 294–306.</li>
+          <li>Acién Fernández et al. (2012). Production cost of a real microalgae plant. <em>Biotechnol. Adv.</em> 30(6).</li>
+          <li>Engineering estimates — pilot validation recommended before commercial sizing.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ FOOTER ============================ -->
+  <footer class="footer">
+    <div>© Microalgae Climate-Tech · Calculator v1.0</div>
+    <div>OD allowed 0.1–10 · Volume 10–1,000,000 L · Days 1–365</div>
+  </footer>
+
+</div>
+
+<script>
+  // ============= STATE =============
+  const state = {
+    od: 3.0,
+    vol: 1000,
+    days: 330,
+    eff: 0.95,
+    factor: 0.25,
+    scenario: 'standard'
+  };
+
+  const STOICH = 1.83;  // kg CO2 per kg dry biomass
+
+  const scenarioDescriptions = {
+    conservative: 'Low-light / suboptimal operations',
+    standard:     'Typical industrial flat-panel PBR with CO₂ sparging',
+    optimized:    'High-light, CO₂-enriched feed, tuned strain'
+  };
+
+  // ============= FORMATTERS =============
+  const fmt = (n, d=2) => {
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+  };
+  const fmtInt = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+  // ============= CALCULATION =============
+  function calc() {
+    const yearly_kg = state.od * state.vol * state.factor * state.eff;
+    const monthly_kg = yearly_kg / 12;
+    const daily_kg = yearly_kg / state.days;
+    const biomass_kg = daily_kg / STOICH;
+    const tons_yr = yearly_kg / 1000;
+    const effective_F = state.factor * state.eff;
+
+    return { yearly_kg, monthly_kg, daily_kg, biomass_kg, tons_yr, effective_F };
+  }
+
+  // ============= VALIDATION =============
+  function validate() {
+    const msgs = [];
+    if (state.od < 0.1 || state.od > 10) msgs.push('OD must be between 0.1 and 10');
+    if (state.vol < 10) msgs.push('Volume must be ≥ 10 L');
+    if (state.days < 1 || state.days > 365) msgs.push('Operating days must be 1–365');
+    if (state.eff < 0 || state.eff > 1) msgs.push('Efficiency must be between 0% and 100%');
+
+    const el = document.getElementById('validation');
+    if (msgs.length) {
+      el.textContent = '⚠ ' + msgs.join(' · ');
+      el.classList.add('show');
+    } else {
+      el.classList.remove('show');
+    }
+    return msgs.length === 0;
+  }
+
+  // ============= CAR-KM EQUIVALENCE =============
+  // Average ICE passenger car: ~0.166 kg CO2 per km
+  function carEquivalent(kg_co2) {
+    const km = kg_co2 / 0.166;
+    if (km < 1000) return `≈ offsets ${fmtInt(km)} km of average passenger-car driving`;
+    return `≈ offsets ${fmtInt(km)} km of average passenger-car driving`;
+  }
+
+  // ============= RENDER =============
+  function render() {
+    validate();
+    const r = calc();
+
+    // Inputs displays
+    document.getElementById('odVal').textContent = state.od.toFixed(1);
+    document.getElementById('volVal').textContent = fmtInt(state.vol);
+    document.getElementById('daysVal').textContent = state.days;
+    document.getElementById('effVal').textContent = Math.round(state.eff * 100);
+    document.getElementById('factorDisplay').textContent = state.factor.toFixed(3) + ' kg / OD·L·yr';
+    document.getElementById('scenarioDesc').textContent = scenarioDescriptions[state.scenario];
+
+    // Hero
+    document.getElementById('heroTons').textContent = fmt(r.tons_yr, 2);
+    document.getElementById('heroEq').innerHTML =
+      `${state.od.toFixed(1)} × ${fmtInt(state.vol)} L × ${state.factor.toFixed(2)} × ${state.eff.toFixed(2)}`;
+
+    // Output cards
+    document.getElementById('yearKg').textContent = fmt(r.yearly_kg, 1);
+    document.getElementById('monthKg').textContent = fmt(r.monthly_kg, 1);
+    document.getElementById('dayKg').textContent = fmt(r.daily_kg, 2);
+    document.getElementById('biomass').textContent = fmt(r.biomass_kg, 2);
+    document.getElementById('effFactor').textContent = fmt(r.effective_F, 3);
+    document.getElementById('yearEquiv').textContent = carEquivalent(r.yearly_kg);
+
+    // Summary
+    const scenarioName = state.scenario.charAt(0).toUpperCase() + state.scenario.slice(1);
+    document.getElementById('summaryText').innerHTML =
+      `Under the <strong>${scenarioName}</strong> operating scenario at OD <strong>${state.od.toFixed(2)}</strong>, ` +
+      `a <strong>${fmtInt(state.vol)} L</strong> flat-panel photobioreactor running <strong>${state.days} days/year</strong> ` +
+      `at <strong>${Math.round(state.eff*100)}%</strong> efficiency is projected to sequester approximately ` +
+      `<strong>${fmt(r.tons_yr, 2)} tonnes</strong> of CO₂ annually, yielding around ` +
+      `<strong>${fmt(r.biomass_kg, 2)} kg</strong> of dry algal biomass per day.`;
+
+    // Charts
+    updateCharts();
+  }
+
+  // ============= EVENT WIRING =============
+  function wire(id, key, transform) {
+    const el = document.getElementById(id);
+    el.addEventListener('input', () => {
+      state[key] = transform ? transform(+el.value) : +el.value;
+      render();
+    });
+  }
+  wire('od', 'od');
+  wire('vol', 'vol');
+  wire('days', 'days');
+  wire('eff', 'eff', v => v / 100);
+
+  document.querySelectorAll('.scenario-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.factor = parseFloat(btn.dataset.factor);
+      state.scenario = btn.dataset.scenario;
+      render();
+    });
+  });
+
+  // ============= CHART.JS =============
+  const sharedAxisColor   = '#6a7c70';
+  const sharedGridColor   = 'rgba(106, 124, 112, 0.12)';
+  const sharedTickFont    = { family: 'JetBrains Mono', size: 10 };
+  const lime              = '#c7f24c';
+  const algae             = '#0d3a26';
+  const algaeMid          = '#1b6244';
+
+  const odPoints  = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7, 10];
+  const volPoints = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+
+  // Plugin: highlight current point
+  const highlightPlugin = {
+    id: 'highlightCurrent',
+    afterDatasetsDraw(chart, args, opts) {
+      const xVal = opts.xVal;
+      if (xVal == null) return;
+      const ds = chart.data.datasets[0];
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+
+      // Compute y as the modeled value (live)
+      const yVal = opts.compute(xVal);
+      const xPx = xScale.getPixelForValue(xVal);
+      const yPx = yScale.getPixelForValue(yVal);
+
+      const ctx = chart.ctx;
+      // Vertical guide
+      ctx.save();
+      ctx.strokeStyle = 'rgba(13, 58, 38, 0.35)';
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xPx, yScale.bottom);
+      ctx.lineTo(xPx, yPx);
+      ctx.stroke();
+      ctx.restore();
+
+      // Marker
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, 7, 0, Math.PI * 2);
+      ctx.fillStyle = lime;
+      ctx.strokeStyle = algae;
+      ctx.lineWidth = 2.5;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Label
+      const label = opts.label(xVal, yVal);
+      ctx.save();
+      ctx.font = '600 11px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(label).width + 14;
+      const lx = Math.min(xPx + 10, xScale.right - tw - 4);
+      const ly = Math.max(yPx - 22, yScale.top + 4);
+      ctx.fillStyle = algae;
+      ctx.fillRect(lx, ly, tw, 18);
+      ctx.fillStyle = lime;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, lx + 7, ly + 9);
+      ctx.restore();
+    }
+  };
+
+  Chart.register(highlightPlugin);
+
+  function makeLineDataset(label, color) {
+    return {
+      label,
+      data: [],
+      borderColor: color,
+      backgroundColor: 'rgba(27, 98, 68, 0.08)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: color,
+      pointBorderColor: color,
+      tension: 0.25,
+      fill: true
+    };
+  }
+
+  const odCtx = document.getElementById('odChart').getContext('2d');
+  const odChart = new Chart(odCtx, {
+    type: 'line',
+    data: {
+      labels: odPoints,
+      datasets: [makeLineDataset('Yearly CO₂ (kg)', algaeMid)]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: algae,
+          titleColor: lime,
+          bodyColor: '#f4f1ea',
+          titleFont:  { family: 'JetBrains Mono', size: 10 },
+          bodyFont:   { family: 'JetBrains Mono', size: 11 },
+          padding: 10,
+          displayColors: false,
+          callbacks: {
+            title: (items) => 'OD = ' + items[0].label,
+            label: (item) => fmt(item.parsed.y, 1) + ' kg CO₂/yr'
+          }
+        },
+        highlightCurrent: {
+          xVal: 3.0,
+          compute: (od) => od * state.vol * state.factor * state.eff,
+          label: (x, y) => `OD ${x.toFixed(1)} · ${fmt(y, 0)} kg`
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          title: { display: true, text: 'OPTICAL DENSITY (OD)', color: sharedAxisColor, font: { family: 'JetBrains Mono', size: 10, weight: 600 } },
+          grid: { color: sharedGridColor },
+          ticks: { color: sharedAxisColor, font: sharedTickFont }
+        },
+        y: {
+          title: { display: true, text: 'KG CO₂ / YEAR', color: sharedAxisColor, font: { family: 'JetBrains Mono', size: 10, weight: 600 } },
+          grid: { color: sharedGridColor },
+          ticks: { color: sharedAxisColor, font: sharedTickFont, callback: (v) => fmtInt(v) },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+
+  const volCtx = document.getElementById('volChart').getContext('2d');
+  const volChart = new Chart(volCtx, {
+    type: 'line',
+    data: {
+      labels: volPoints,
+      datasets: [makeLineDataset('Yearly CO₂ (kg)', algaeMid)]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: algae,
+          titleColor: lime,
+          bodyColor: '#f4f1ea',
+          titleFont:  { family: 'JetBrains Mono', size: 10 },
+          bodyFont:   { family: 'JetBrains Mono', size: 11 },
+          padding: 10,
+          displayColors: false,
+          callbacks: {
+            title: (items) => 'Volume = ' + fmtInt(items[0].parsed.x) + ' L',
+            label: (item) => fmt(item.parsed.y, 0) + ' kg CO₂/yr'
+          }
+        },
+        highlightCurrent: {
+          xVal: 1000,
+          compute: (vol) => state.od * vol * state.factor * state.eff,
+          label: (x, y) => `${fmtInt(x)} L · ${fmt(y, 0)} kg`
+        }
+      },
+      scales: {
+        x: {
+          type: 'logarithmic',
+          title: { display: true, text: 'PBR VOLUME (LITERS)', color: sharedAxisColor, font: { family: 'JetBrains Mono', size: 10, weight: 600 } },
+          grid: { color: sharedGridColor },
+          ticks: { color: sharedAxisColor, font: sharedTickFont, callback: (v) => {
+            if ([100, 1000, 10000, 100000].includes(v)) return fmtInt(v);
+            return '';
+          }}
+        },
+        y: {
+          title: { display: true, text: 'KG CO₂ / YEAR', color: sharedAxisColor, font: { family: 'JetBrains Mono', size: 10, weight: 600 } },
+          grid: { color: sharedGridColor },
+          ticks: { color: sharedAxisColor, font: sharedTickFont, callback: (v) => fmtInt(v) },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+
+  function updateCharts() {
+    // Recompute series with current state
+    odChart.data.datasets[0].data = odPoints.map(od =>
+      ({ x: od, y: od * state.vol * state.factor * state.eff })
+    );
+    odChart.options.plugins.highlightCurrent.xVal = state.od;
+    odChart.update('none');
+
+    volChart.data.datasets[0].data = volPoints.map(v =>
+      ({ x: v, y: state.od * v * state.factor * state.eff })
+    );
+    volChart.options.plugins.highlightCurrent.xVal = state.vol;
+    volChart.update('none');
+  }
+
+  // ============= INIT =============
+  render();
+</script>
+</body>
+</html>
