@@ -22,7 +22,7 @@ ChartJS.register(
 
 /* ── Constants ── */
 const STOICH    = 1.83;
-const OD_POINTS  = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7, 10];
+const OD_POINTS  = [0.5, 1, 1.5, 2, 2.5, 3, 4];
 const VOL_POINTS = [0, 100, 250, 500, 1000, 2000, 3500, 6000, 10000];
 const SCENARIOS  = {
   conservative: { factor: 0.18, label: 'Conservative', desc: 'Low light, suboptimal mixing, lower-productivity strains' },
@@ -72,7 +72,7 @@ export default function Calculator() {
 
   /* ── Validation ── */
   const validationMsgs = [
-    od > 10              ? 'OD must be 0 – 10'           : null,
+    od > 4               ? 'OD must be 0 – 4'            : null,
     vol > 10000          ? 'Volume must be 0 – 10,000 L' : null,
     days > 365           ? 'Days must be 0 – 365'        : null,
     eff > 100            ? 'Efficiency must be 0 – 100%' : null,
@@ -223,7 +223,7 @@ export default function Calculator() {
               <SliderField
                 label="Optical Density (OD₆₈₀)"
                 hint="Measured at 680 nm · range 0 – 10"
-                min={0} max={10} step={0.1} value={od}
+                min={0} max={4} step={0.1} value={od}
                 onChange={setOd}
               />
               <SliderField
