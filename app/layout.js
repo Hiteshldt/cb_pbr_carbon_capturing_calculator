@@ -19,17 +19,22 @@ const playfair = Playfair_Display({
   display: 'swap',
 });
 
+import AdminLayout from '../components/AdminLayout';
+
 export const metadata = {
-  title: 'Microalgae Carbon Capture Calculator — Carbelim',
-  description:
-    'Engineering-grade tool for estimating CO₂ sequestration in flat-panel microalgae photobioreactors. Enter your PBR parameters and get live annual carbon capture estimates.',
+  title: 'Admin Dashboard — Carbelim',
+  description: 'Carbelim internal administration dashboard.',
   icons: { icon: '/favicon.ico' },
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${playfair.variable}`}>
-      <body>{children}</body>
+      <body>
+        <AdminLayout>
+          {children}
+        </AdminLayout>
+      </body>
     </html>
   );
 }

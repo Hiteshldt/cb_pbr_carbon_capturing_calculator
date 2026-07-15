@@ -21,13 +21,18 @@ ChartJS.register(
 );
 
 /* ── Constants ── */
-const STOICH    = 1.83;
-const OD_POINTS  = [0.5, 1, 1.5, 2, 2.5, 3, 4];
+const STOICH       = 1.833;   // kg CO₂ per kg dry biomass (report: 44/12 × 50% C)
+const K_DEFAULT    = 0.6;     // OD → productivity calibration: P = k × OD (g/L/day)
+const OAK_TREE_CO2 = 22.44;  // kg CO₂/year absorbed per mature oak tree (Kumar 2026)
+const CAR_KM_CO2   = 0.166;  // kg CO₂/km (IEA 2021 global avg passenger car)
+
+const OD_POINTS  = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const VOL_POINTS = [0, 100, 250, 500, 1000, 2000, 3500, 6000, 10000];
+
 const SCENARIOS  = {
-  conservative: { factor: 0.18, label: 'Conservative', desc: 'Low light, suboptimal mixing, lower-productivity strains' },
-  standard:     { factor: 0.25, label: 'Standard',     desc: 'Typical industrial flat-panel PBR with CO₂ sparging' },
-  optimized:    { factor: 0.30, label: 'Optimized',    desc: 'High-PAR, CO₂-enriched feed, tuned strain, automated pH' },
+  conservative: { k: 0.50, label: 'Conservative', desc: 'Low light, suboptimal mixing, lower-productivity strains (P ≈ 1.5 g/L/day at OD 3)' },
+  standard:     { k: 0.60, label: 'Standard',     desc: 'Validated reference — Carbelim PRO15 measured productivity (P = 1.8 g/L/day at OD 3)' },
+  optimized:    { k: 0.70, label: 'Optimized',    desc: 'High-PAR, CO₂-enriched, tuned strain, automated pH (P ≈ 2.1 g/L/day at OD 3)' },
 };
 
 /* ── Formatters ── */
@@ -51,24 +56,42 @@ const tooltipDefaults = {
 export default function Calculator() {
   /* ── State ── */
   const [od,       setOd]       = useState(3.0);
-  const [vol,      setVol]      = useState(1000);
-  const [days,     setDays]     = useState(330);
-  const [eff,      setEff]      = useState(95);
+  const [vol,      setVol]      = useState(500);
+  const [days,     setDays]     = useState(365);
+  const [eff,      setEff]      = useState(100);
   const [scenario, setScenario] = useState('standard');
 
-  const factor     = SCENARIOS[scenario].factor;
+  const k          = SCENARIOS[scenario].k;
   const effDecimal = eff / 100;
 
-  /* ── Derived ── */
-  const yearly_kg   = od * vol * factor * effDecimal;
-  const monthly_kg  = yearly_kg / 12;
-  const daily_kg    = yearly_kg / days;
-  const biomass_kg  = daily_kg / STOICH;
-  const tons_yr     = yearly_kg / 1000;
-  const effective_F = factor * effDecimal;
+  /* ── Derived: Volumetric-Productivity Model ──
+     P (g/L/day) = k × OD
+     Annual CO₂ (kg/yr) = V × P × τ × D × η / 1000
+     This fixes the days bug (D now enters the annual formula)
+     and aligns with the study report's validated chain.
+  */
+  const productivity  = k * od;                                          // g/L/day
+  const daily_biomass_g  = vol * productivity;                           // g/day
+  const daily_co2_g      = daily_biomass_g * STOICH;                     // g CO₂/day
+  const yearly_kg     = (vol * productivity * STOICH * days * effDecimal) / 1000;
+  const monthly_kg    = yearly_kg / 12;
+  const daily_kg      = days > 0 ? yearly_kg / days : 0;
+  const biomass_kg    = days > 0 ? daily_biomass_g / 1000 : 0;           // kg/day
+  const biomass_yr_kg = (vol * productivity * days * effDecimal) / 1000; // kg/yr
+  const tons_yr       = yearly_kg / 1000;
 
+  // O₂ production: CO₂ × 32/44 (stoichiometric)
+  const daily_o2_g    = daily_co2_g * (32 / 44) * effDecimal;
+  const yearly_o2_kg  = yearly_kg * (32 / 44);
+
+  // Equivalences
+  const oakTrees   = yearly_kg / OAK_TREE_CO2;
+  const carKm      = yearly_kg / CAR_KM_CO2;
+
+  const treeEquiv = (kg) =>
+    `≈ ${fmt(kg / OAK_TREE_CO2, 1)} mature oak trees absorbing CO₂ for a year`;
   const carEquiv = (kg) =>
-    `Equivalent to offsetting ${fmtInt(kg / 0.166)} km of passenger-car driving`;
+    `Offsets ${fmtInt(kg / CAR_KM_CO2)} km of passenger-car driving`;
 
   /* ── Validation ── */
   const validationMsgs = [
@@ -80,12 +103,20 @@ export default function Calculator() {
 
   /* ── Chart highlight plugin (reads live state via ref) ── */
   const calcRef = useRef();
-  calcRef.current = { od, vol, factor, effDecimal };
+  calcRef.current = { od, vol, k, effDecimal, days };
+
+  function computeAnnual(odVal, volVal) {
+    const { k, effDecimal, days } = calcRef.current;
+    return (volVal * (k * odVal) * STOICH * days * effDecimal) / 1000;
+  }
 
   function drawHighlight(chart, type) {
-    const { od, vol, factor, effDecimal } = calcRef.current;
+    const { od, vol } = calcRef.current;
     const xVal = type === 'od' ? od : vol;
-    const yVal = od * vol * factor * effDecimal;
+    const yVal = computeAnnual(
+      type === 'od' ? od : calcRef.current.od,
+      type === 'od' ? calcRef.current.vol : vol
+    );
     const xs = chart.scales.x, ys = chart.scales.y;
     if (!xs || !ys) return;
     const xPx = xs.getPixelForValue(xVal);
@@ -122,12 +153,12 @@ export default function Calculator() {
 
   /* ── Chart data ── */
   const odData = { datasets: [{
-    data: OD_POINTS.map((o) => ({ x: o, y: o * vol * factor * effDecimal })),
+    data: OD_POINTS.map((o) => ({ x: o, y: computeAnnual(o, vol) })),
     borderColor: GREEN, backgroundColor: 'rgba(61,123,46,0.06)',
     borderWidth: 2, pointRadius: 3, pointBackgroundColor: GREEN, tension: 0.25, fill: true,
   }]};
   const volData = { datasets: [{
-    data: VOL_POINTS.map((v) => ({ x: v, y: od * v * factor * effDecimal })),
+    data: VOL_POINTS.map((v) => ({ x: v, y: computeAnnual(od, v) })),
     borderColor: GREEN, backgroundColor: 'rgba(61,123,46,0.06)',
     borderWidth: 2, pointRadius: 3, pointBackgroundColor: GREEN, tension: 0.25, fill: true,
   }]};
@@ -194,7 +225,7 @@ export default function Calculator() {
         <div className={s.bannerLeft}>
           <span className={s.bannerIcon}>🌿</span>
           <span className={s.bannerText}>
-            Adjust any parameter — outputs update in real time.
+            Adjust any parameter — outputs update in real time. Defaults match the Carbelim study report (PRO15 / 500 L).
           </span>
         </div>
         <div className={s.bannerRight}>
@@ -202,8 +233,8 @@ export default function Calculator() {
             <span className={s.bannerDot} />
             Real-time
           </span>
-          <span className={s.bannerBadge}>v1.0</span>
-          <span className={s.bannerBadge}>OD·V·F·η</span>
+          <span className={s.bannerBadge}>v2.0</span>
+          <span className={s.bannerBadge}>V·P·τ·D·η</span>
         </div>
       </div>
 
@@ -222,28 +253,39 @@ export default function Calculator() {
 
               <SliderField
                 label="Optical Density (OD₆₈₀)"
-                hint="Measured at 680 nm · range 0 – 10"
+                hint="Measured at 680 nm · range 0 – 4"
                 min={0} max={4} step={0.1} value={od}
                 onChange={setOd}
               />
+
+              {/* Biomass Productivity — interactive, linked to OD via k */}
+              <SliderField
+                label="Biomass Productivity"
+                unit="g/L/d"
+                hint={`Linked to OD via P = k × OD (k = ${k.toFixed(2)}) · Report reference: 1.8 g/L/day at OD 3.0`}
+                min={0} max={Math.round(k * 4 * 100) / 100} step={0.05}
+                value={Math.round(productivity * 100) / 100}
+                onChange={(p) => setOd(Math.min(4, Math.max(0, p / k)))}
+              />
+
               <SliderField
                 label="PBR Working Volume"
                 unit="L"
-                hint="0 – 10,000 L"
+                hint="0 – 10,000 L · Default 500 L (PRO15)"
                 min={0} max={10000} step={10} value={vol}
                 onChange={setVol}
               />
               <SliderField
                 label="Operating Days / Year"
                 unit="days"
-                hint="Default 330 days ≈ 90% uptime"
-                min={0} max={365} step={1} value={days}
+                hint="Default 365 days = continuous operation (per report)"
+                min={1} max={365} step={1} value={days}
                 onChange={setDays}
               />
               <SliderField
                 label="System Efficiency"
                 unit="%"
-                hint="Covers downtime, harvest loss, respiration"
+                hint="Covers downtime, harvest loss, respiration · 100% = raw (report baseline)"
                 min={0} max={100} step={1} value={eff}
                 onChange={setEff}
               />
@@ -251,8 +293,10 @@ export default function Calculator() {
               {/* Scenario */}
               <div className={s.field}>
                 <div className={s.fieldHeader}>
-                  <label className={s.fieldLabel}>Capture Factor Scenario</label>
-                  <span className={s.fieldVal}>{factor.toFixed(3)}</span>
+                  <label className={s.fieldLabel}>Productivity Scenario</label>
+                  <div className={s.fieldValGroup}>
+                    <span className={s.fieldVal}>k = {k.toFixed(2)}</span>
+                  </div>
                 </div>
                 <div className={s.scenarioGrid}>
                   {Object.entries(SCENARIOS).map(([key, sc]) => (
@@ -262,7 +306,7 @@ export default function Calculator() {
                       onClick={() => setScenario(key)}
                     >
                       <span className={s.scenName}>{sc.label}</span>
-                      <span className={s.scenVal}>{sc.factor.toFixed(2)}</span>
+                      <span className={s.scenVal}>k = {sc.k.toFixed(2)}</span>
                     </button>
                   ))}
                 </div>
@@ -278,10 +322,10 @@ export default function Calculator() {
             <div className={s.modelEq}>
               <span className={s.modelEqLabel}>Model equation</span>
               <div className={s.modelEqRow}>
-                <code className={s.modelEqFormula}>Y = OD × V × F × η</code>
+                <code className={s.modelEqFormula}>Y = V × P × τ × D × η / 1000</code>
               </div>
               <code className={s.modelEqValues}>
-                {od.toFixed(1)} × {fmtInt(vol)} L × {factor.toFixed(2)} × {effDecimal.toFixed(2)}
+                {fmtInt(vol)} L × {fmt(productivity, 2)} g/L/d × {STOICH} × {days} d × {effDecimal.toFixed(2)}
               </code>
             </div>
           </aside>
@@ -311,15 +355,18 @@ export default function Calculator() {
                   <span className={s.kpiTonneSub}>tonnes/yr</span>
                 </div>
               </div>
-              <div className={s.kpiEquiv}>{carEquiv(yearly_kg)}</div>
+              <div className={s.kpiEquiv}>{treeEquiv(yearly_kg)}</div>
+              <div className={s.kpiEquivSecondary}>{carEquiv(yearly_kg)}</div>
             </div>
 
-            {/* 2 × 2 secondary metrics */}
+            {/* 3 × 2 secondary metrics */}
             <div className={s.metricsGrid}>
-              <MetricCard label="Monthly Capture"     value={fmt(monthly_kg, 1)} unit="kg / month"         />
-              <MetricCard label="Daily Capture"       value={fmt(daily_kg, 2)}   unit="kg / day"           />
-              <MetricCard label="Daily Biomass Yield" value={fmt(biomass_kg, 2)} unit="kg dry mass / day"  />
-              <MetricCard label="Net Capture Factor"  value={fmt(effective_F, 3)} unit="kg CO₂ · OD⁻¹·L⁻¹·yr⁻¹" />
+              <MetricCard label="Monthly Capture"     value={fmt(monthly_kg, 1)} unit="kg CO₂ / month"        />
+              <MetricCard label="Daily CO₂ Capture"   value={fmt(daily_co2_g * effDecimal, 1)}   unit="g CO₂ / day"           />
+              <MetricCard label="Daily Biomass Yield"  value={fmt(daily_biomass_g * effDecimal / 1000, 3)} unit="kg dry mass / day"  />
+              <MetricCard label="Annual Biomass"       value={fmt(biomass_yr_kg, 1)} unit="kg dry mass / year"    />
+              <MetricCard label="Annual O₂ Released"   value={fmt(yearly_o2_kg, 1)} unit="kg O₂ / year"          />
+              <MetricCard label="Oak Tree Equivalent"  value={fmt(oakTrees, 1)}      unit="mature oak trees"      />
             </div>
 
             {/* Auto-narrative */}
@@ -327,12 +374,15 @@ export default function Calculator() {
               <div className={s.narrativeTag}>System Summary</div>
               <p className={s.narrativeText}>
                 A <strong>{fmtInt(vol)} L</strong> flat-panel PBR at OD{' '}
-                <strong>{od.toFixed(2)}</strong>, operating under the{' '}
+                <strong>{od.toFixed(2)}</strong> (effective productivity{' '}
+                <strong>{fmt(productivity, 2)} g/L/day</strong>), operating under the{' '}
                 <strong>{SCENARIOS[scenario].label}</strong> scenario for{' '}
                 <strong>{days} days/yr</strong> at <strong>{eff}%</strong> efficiency,
                 will sequester approximately{' '}
-                <strong>{fmt(tons_yr, 2)} t CO₂</strong> annually — yielding around{' '}
-                <strong>{fmt(biomass_kg, 2)} kg</strong> of dry algal biomass per operating day.
+                <strong>{fmt(tons_yr, 2)} t CO₂</strong> annually, release{' '}
+                <strong>{fmt(yearly_o2_kg, 1)} kg O₂</strong>, and yield around{' '}
+                <strong>{fmt(biomass_yr_kg, 1)} kg</strong> of dry algal biomass — equivalent to{' '}
+                <strong>{fmt(oakTrees, 1)} mature oak trees</strong>.
               </p>
             </div>
           </div>
@@ -371,77 +421,98 @@ export default function Calculator() {
           <div className={s.methodBlock}>
             <h3 className={s.methodH3}>1 · Core Model Equation</h3>
             <div className={s.methodEq}>
-              Y<sub>CO₂</sub> (kg yr⁻¹) = OD × V (L) × F (kg · OD⁻¹ · L⁻¹ · yr⁻¹) × η
+              Y<sub>CO₂</sub> (kg yr⁻¹) = V (L) × P (g·L⁻¹·d⁻¹) × τ × D (days) × η / 1000
             </div>
             <div className={s.methodTerms}>
+              <div className={s.methodTerm}>
+                <span className={s.methodTermKey}>V</span>
+                <span className={s.methodTermDef}>
+                  Working volume of the flat-panel photobioreactor in litres. Default 500 L corresponds
+                  to the Carbelim PRO15 culture volume (~495 L in a 500 L tank).
+                </span>
+              </div>
+              <div className={s.methodTerm}>
+                <span className={s.methodTermKey}>P</span>
+                <span className={s.methodTermDef}>
+                  Volumetric biomass productivity in g·L⁻¹·d⁻¹ (dry weight). Derived from optical density
+                  via the calibration <strong>P = k × OD</strong>, where k = {K_DEFAULT} maps OD₆₈₀ to measured
+                  productivity. At the default OD = 3.0 and k = {K_DEFAULT}, P = 1.8 g·L⁻¹·d⁻¹ — matching
+                  the Carbelim study report's validated measurement on the 60 L reference system.<sup className={s.citeSup}>[1, 11]</sup>
+                </span>
+              </div>
               <div className={s.methodTerm}>
                 <span className={s.methodTermKey}>OD</span>
                 <span className={s.methodTermDef}>
                   Optical density at 680 nm — the chlorophyll <em>a</em> absorption peak. Used as a linear proxy for volumetric biomass
-                  concentration under Beer–Lambert conditions (valid for OD₆₈₀ 0–10 in well-mixed cultures).<sup className={s.citeSup}>[1, 4]</sup>
+                  concentration under Beer–Lambert conditions (valid for OD₆₈₀ 0–4 in well-mixed cultures).<sup className={s.citeSup}>[1, 4]</sup>
                 </span>
               </div>
               <div className={s.methodTerm}>
-                <span className={s.methodTermKey}>V</span>
+                <span className={s.methodTermKey}>τ</span>
                 <span className={s.methodTermDef}>
-                  Working volume of the flat-panel photobioreactor in litres.
+                  CO₂ fixation stoichiometry: 1.833 kg CO₂ per kg dry biomass (= 0.50 × 44.01/12.01).
+                  Consistent with the study report's value.<sup className={s.citeSup}>[8, 9, 11]</sup>
                 </span>
               </div>
               <div className={s.methodTerm}>
-                <span className={s.methodTermKey}>F</span>
+                <span className={s.methodTermKey}>D</span>
                 <span className={s.methodTermDef}>
-                  Empirical capture factor — maps OD-normalised volumetric productivity to annual CO₂ sequestration.
-                  Calibrated from published industrial-scale flat-panel PBR productivity data.<sup className={s.citeSup}>[2, 3, 5]</sup>
+                  Operating days per year. Default 365 = continuous operation, matching the study
+                  report's annual projection (daily rate × 365).<sup className={s.citeSup}>[11]</sup>
                 </span>
               </div>
               <div className={s.methodTerm}>
                 <span className={s.methodTermKey}>η</span>
                 <span className={s.methodTermDef}>
                   System efficiency (0–1). Accounts for scheduled downtime, harvest losses, evaporation, self-shading
-                  at high OD, and respiratory CO₂ release (typically 15–25% of gross fixation).<sup className={s.citeSup}>[2, 8]</sup>
+                  at high OD, and respiratory CO₂ release (typically 15–25% of gross fixation). Default 100% matches
+                  the report's raw-productivity baseline; reduce to 70–90% for real-world annual estimates.<sup className={s.citeSup}>[2, 8]</sup>
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 2 · Capture Factor */}
+          {/* 2 · Productivity Scenarios */}
           <div className={s.methodBlock}>
-            <h3 className={s.methodH3}>2 · Capture-Factor Scenarios</h3>
+            <h3 className={s.methodH3}>2 · Productivity Scenarios (k calibration)</h3>
             <p className={s.methodPara}>
-              F is derived from reported areal and volumetric productivities for flat-panel PBRs,
-              converted to OD-normalised units using typical path-lengths (2–5 cm) and published
-              dry-weight/OD calibration data.<sup className={s.citeSup}>[2, 3, 5]</sup> The three scenarios bracket
-              the performance range documented in peer-reviewed pilot and industrial studies:
+              The calibration constant <strong>k</strong> translates OD₆₈₀ into volumetric biomass productivity (P = k × OD).
+              The three scenarios bracket the performance range documented in the Carbelim study report
+              and peer-reviewed pilot studies:
             </p>
             <table className={s.methodTable}>
               <thead>
                 <tr>
                   <th className={s.methodTh}>Scenario</th>
-                  <th className={s.methodTh}>F value</th>
-                  <th className={s.methodTh}>Productivity basis &amp; conditions</th>
+                  <th className={s.methodTh}>k value</th>
+                  <th className={s.methodTh}>P at OD 3</th>
+                  <th className={s.methodTh}>Conditions</th>
                   <th className={s.methodTh}>Refs</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td className={s.methodTd}><strong>Conservative</strong></td>
-                  <td className={s.methodTd}><code>0.18</code></td>
+                  <td className={s.methodTd}><code>0.50</code></td>
+                  <td className={s.methodTd}>1.5 g/L/day</td>
                   <td className={s.methodTd}>PAR &lt;150 µmol m⁻² s⁻¹, suboptimal CO₂ supply,
-                    non-optimised wild-type strains; corresponds to ~0.10–0.18 g·L⁻¹·d⁻¹ dry-weight productivity</td>
+                    non-optimised wild-type strains</td>
                   <td className={s.methodTd}>[2, 6]</td>
                 </tr>
                 <tr>
                   <td className={s.methodTd}><strong>Standard</strong></td>
-                  <td className={s.methodTd}><code>0.25</code></td>
-                  <td className={s.methodTd}>Typical industrial flat-panel with CO₂ sparging, ~200 µmol m⁻² s⁻¹
-                    PAR, controlled pH 7–8; ~0.18–0.25 g·L⁻¹·d⁻¹</td>
-                  <td className={s.methodTd}>[3, 5]</td>
+                  <td className={s.methodTd}><code>0.60</code></td>
+                  <td className={s.methodTd}>1.8 g/L/day</td>
+                  <td className={s.methodTd}>Validated Carbelim reference — PRO15 measured productivity
+                    at OD 3, CO₂ sparging, controlled pH 7–8</td>
+                  <td className={s.methodTd}>[3, 5, 11]</td>
                 </tr>
                 <tr>
                   <td className={s.methodTd}><strong>Optimised</strong></td>
-                  <td className={s.methodTd}><code>0.30</code></td>
+                  <td className={s.methodTd}><code>0.70</code></td>
+                  <td className={s.methodTd}>2.1 g/L/day</td>
                   <td className={s.methodTd}>High-PAR (&gt;300 µmol m⁻² s⁻¹), 5–10% CO₂-enriched sparging,
-                    selected/engineered strain, automated pH control; ~0.25–0.35 g·L⁻¹·d⁻¹</td>
+                    selected/engineered strain, automated pH control</td>
                   <td className={s.methodTd}>[3, 7]</td>
                 </tr>
               </tbody>
@@ -453,20 +524,26 @@ export default function Calculator() {
             <h3 className={s.methodH3}>3 · CO₂ Fixation Stoichiometry</h3>
             <div className={s.methodEq}>
               τ = C<sub>frac</sub> × (M<sub>CO₂</sub> / M<sub>C</sub>) = 0.50 × (44.01 / 12.01) ={' '}
-              <strong>1.83 kg CO₂ kg⁻¹ dry biomass</strong>
+              <strong>1.833 kg CO₂ kg⁻¹ dry biomass</strong>
             </div>
             <p className={s.methodPara}>
               Microalgal dry biomass contains approximately 48–52% carbon by mass across commonly
               cultivated genera — <em>Chlorella, Scenedesmus, Nannochloropsis,</em> and <em>Spirulina.</em>
               <sup className={s.citeSup}>[1, 8]</sup> The representative empirical formula CH₁.₈O₀.₅N₀.₂ implies a
               carbon mass fraction of 48.8%, yielding τ ≈ 1.79–1.83 kg CO₂/kg.<sup className={s.citeSup}>[9]</sup>{' '}
-              The value τ = 1.83 (50% C assumption) is the de facto standard adopted in microalgae
-              life-cycle assessment and techno-economic literature.<sup className={s.citeSup}>[8, 9]</sup>
+              The value τ = 1.833 (50% C assumption) is consistent with the Carbelim study report and
+              the de facto standard in microalgae life-cycle assessment literature.<sup className={s.citeSup}>[8, 9, 11]</sup>
             </p>
-            <div className={s.methodNote}>
-              The η term accounts for respiratory CO₂ release (≈15–25% of gross fixation), so the
-              model output represents <strong>net</strong> CO₂ sequestration, not gross photosynthetic fixation.
+
+            <h3 className={s.methodH3}>O₂ Release Stoichiometry</h3>
+            <div className={s.methodEq}>
+              O₂ (kg/yr) = Y<sub>CO₂</sub> × (M<sub>O₂</sub> / M<sub>CO₂</sub>) = Y<sub>CO₂</sub> × (32 / 44) ={' '}
+              Y<sub>CO₂</sub> × <strong>0.727</strong>
             </div>
+            <p className={s.methodPara}>
+              Photosynthesis releases O₂ stoichiometrically with CO₂ fixation.
+              The Carbelim study report uses this ratio to compute annual O₂ output alongside CO₂ capture.<sup className={s.citeSup}>[11]</sup>
+            </p>
           </div>
 
           {/* 4 · Operating Envelope */}
@@ -474,9 +551,9 @@ export default function Calculator() {
             <h3 className={s.methodH3}>4 · Operating Envelope &amp; Constraints</h3>
             <ul className={s.methodList}>
               <li>
-                <strong>OD₆₈₀ 0–10:</strong> Chlorophyll <em>a</em> absorbs maximally near 680 nm;
+                <strong>OD₆₈₀ 0–4:</strong> Chlorophyll <em>a</em> absorbs maximally near 680 nm;
                 the Beer–Lambert linear relationship between OD and biomass concentration holds in
-                well-stirred suspensions up to OD₆₈₀ ≈ 10. Beyond this threshold, mutual shading
+                well-stirred suspensions up to OD₆₈₀ ≈ 4. Beyond this threshold, mutual shading
                 limits productive culture depth and the linear model overestimates CO₂ fixation.<sup className={s.citeSup}>[4]</sup>
               </li>
               <li>
@@ -488,37 +565,37 @@ export default function Calculator() {
               <li>
                 <strong>Flat-panel geometry:</strong> Flat-panel PBRs offer surface-to-volume ratios
                 of 80–300 m² m⁻³, outperforming tubular reactors (30–80 m² m⁻³) and open raceways
-                (&lt;10 m² m⁻³), enabling the higher volumetric productivities underpinning F.<sup className={s.citeSup}>[5, 7]</sup>
+                (&lt;10 m² m⁻³), enabling the higher volumetric productivities underpinning the model.<sup className={s.citeSup}>[5, 7]</sup>
               </li>
               <li>
-                <strong>Geometry correction ±10–20%:</strong> Switching to tubular or open-raceway
-                systems typically reduces volumetric productivity by 10–30% due to longer light-path
-                lengths and lower illuminated volume fraction.<sup className={s.citeSup}>[6, 7]</sup>
-              </li>
-              <li>
-                <strong>System efficiency η:</strong> The default 95% represents an idealised controlled
-                indoor system. Outdoor systems under variable irradiance typically achieve η ≈ 60–80%;
+                <strong>System efficiency η:</strong> The default 100% represents the report's raw-productivity
+                baseline. Outdoor systems under variable irradiance typically achieve η ≈ 60–80%;
                 factoring in seasonal variation and non-productive periods (cleaning, harvest,
                 maintenance) brings realistic annual η to 70–90%.<sup className={s.citeSup}>[2, 3]</sup>
               </li>
             </ul>
           </div>
 
-          {/* 5 · Emission Equivalence */}
+          {/* 5 · Equivalence */}
           <div className={s.methodBlock}>
-            <h3 className={s.methodH3}>5 · CO₂ Emission Equivalence Factor</h3>
+            <h3 className={s.methodH3}>5 · CO₂ Equivalence Metrics</h3>
             <p className={s.methodPara}>
-              Captured CO₂ is expressed as an equivalent passenger-car driving distance offset using:
+              CO₂ capture is expressed via two equivalence benchmarks:
+            </p>
+            <div className={s.methodEq}>
+              Trees<sub>equiv</sub> = Y<sub>CO₂</sub> (kg) / 22.44 kg tree⁻¹ yr⁻¹
+            </div>
+            <p className={s.methodPara}>
+              A mature oak tree absorbs approximately 22.44 kg CO₂/year. This figure is adopted
+              from the Carbelim study report (Kumar 2026).<sup className={s.citeSup}>[11]</sup>
             </p>
             <div className={s.methodEq}>
               d<sub>offset</sub> (km) = Y<sub>CO₂</sub> (kg) / 0.166 kg km⁻¹
             </div>
             <p className={s.methodPara}>
               The factor 0.166 kg CO₂ km⁻¹ (= 166 g CO₂ km⁻¹) is derived from the IEA Global Fuel
-              Economy Initiative 2021 report, which documents a global average rated CO₂ intensity
-              of 167 g km⁻¹ for new light-duty vehicle registrations in 2019 (petrol, diesel, and
-              hybrid combined).<sup className={s.citeSup}>[10]</sup> This figure is illustrative: regional averages
-              vary significantly — EU 2022 fleet average ≈ 120 g km⁻¹; US 2022 ≈ 215 g km⁻¹.
+              Economy Initiative 2021 report, documenting a global average of 167 g km⁻¹ for new
+              light-duty vehicles.<sup className={s.citeSup}>[10]</sup>
             </p>
           </div>
 
@@ -533,20 +610,24 @@ export default function Calculator() {
               </li>
               <li>
                 <strong>Linear volume scaling:</strong> The model assumes constant CO₂ uptake per unit
-                OD per unit volume. Real systems experience light attenuation at high volume with fixed
+                volume. Real systems experience light attenuation at high volume with fixed
                 illumination area — estimates for V &gt; 2,000 L with fixed lighting should be treated
                 as upper bounds without proportional illumination scaling.
               </li>
               <li>
-                <strong>F calibration uncertainty:</strong> Published F values carry ±20–30%
-                inter-study variability due to differences in strain, reactor geometry, and local
-                climate. Pilot-scale experimental determination of F for the specific strain–reactor
-                combination is recommended before commercial sizing.
+                <strong>k calibration uncertainty:</strong> The default k = 0.6 is calibrated to the
+                Carbelim PRO15 reference system. Different strains, reactor geometries, and growth
+                conditions may require k recalibration (±20–30%).
               </li>
               <li>
                 <strong>Steady-state assumption:</strong> The model assumes continuous or semi-continuous
                 operation at constant OD. Batch or fed-batch systems will yield lower effective annual
                 capture due to lag and stationary phases.
+              </li>
+              <li>
+                <strong>Energy &amp; cost:</strong> The study report includes energy (kWh) and cost (₹) per
+                product model; these are product-specific values that do not scale with volume
+                and are not computed by this calculator.
               </li>
             </ul>
             <div className={s.methodNote}>
@@ -629,6 +710,11 @@ export default function Calculator() {
                   https://www.iea.org/reports/global-fuel-economy-initiative-2021
                 </a>
               </li>
+              <li className={s.methodRefItem}>
+                Carbelim (2026). <em>Microalgae-Based Carbon Capture Using Photobioreactors: A Comprehensive Study Report</em>.
+                Carbelim Technologies. Internal validated reference for PRO15 productivity (1.8 g/L/day),
+                CO₂ stoichiometry (1.833), and oak-tree equivalence (22.44 kg CO₂/tree/yr).
+              </li>
             </ol>
           </div>
 
@@ -636,8 +722,8 @@ export default function Calculator() {
 
         {/* ══ FOOTER ══ */}
         <footer className={s.footer}>
-          <div>© {new Date().getFullYear()} Carbelim · Microalgae Carbon Capture Calculator v1.0</div>
-          <div>OD: 0–10 · Volume: 0–10,000 L · Days: 0–365</div>
+          <div>© {new Date().getFullYear()} Carbelim · Microalgae Carbon Capture Calculator v2.0</div>
+          <div>OD: 0–4 · Volume: 0–10,000 L · Days: 1–365 · Model: V·P·τ·D·η</div>
         </footer>
       </div>
     </div>
